@@ -1,27 +1,122 @@
-import asyncio
+import threading
+import os
+import random
+import socket
+from colorama import Fore, Back, Style, init
 
 
-async def send_message():
-    reader, writer = await asyncio.open_connection(
-        '127.0.0.1', 8888)
+UDP_MAX_SIZE = 65535
 
-    try:
-        while True:
-            message = input("Enter message to send: ")
-            writer.write(message.encode())
-            await writer.drain()
+COMMANDS = (
+    '/members',
+    '/connect',
+    '/exit',
+    '/help'
+)
 
-    except Exception as e:
-        print(f'Exception occurred: {e}')
+HELP_TEXT = """
+/members - get active members
+/connect <client> - connect to member
+/exit - disconnect from client
+/help - show this message
+"""
 
-    finally:
-        writer.close()
-        await writer.wait_closed()
+def listen(s: socket.socket, host: str, port: int):
+    while True:
+        msg, addr = s.recvfrom(UDP_MAX_SIZE)
+        msg_port = addr[-1]
+        msg = msg.decode('ascii')
+        allowed_ports = threading.current_thread().allowed_ports
+        if msg_port not in allowed_ports:
+            continue
 
+        if not msg:
+            continue
 
-async def main():
-    await send_message()
+        if '__' in msg:
+            command, content = msg.split('__')
+            if command == 'members':
+                for n, member in enumerate(content.split(';'), start=1):
+                    print('\r\r' + f'{n}) {member}' + '\n' + 'you: ', end='')
 
+        else:
+            peer_name = f'client{msg_port}'
+            print('\r\r' + f'{peer_name}: ' + msg + '\n' + f'you: ', end='')
+
+def start_listen(target, socket, host, port):
+    th = threading.Thread(target=target, args=(socket, host, port), daemon=True)
+    th.start
+    return th
+
+def connect(host: str = '127.0.0.1', port: int = 3000):
+    own_port = random.randint(8000, 9000)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind((host, own_port))
+
+    listen_thread = start_listen(listen, s, host, port)
+    allowed_ports = [port]
+    listen_thread.allowed_ports = allowed_ports
+    sendto = (host, port)
+    s.sendto('__join'.encode('ascii'), sendto)
+    while True:
+        msg = input(f'you: ')
+
+        command = msg.split(' ')[0]
+        if command in COMMANDS:
+            if msg == '/members':
+                s.sendto('__members'.encode('ascii'), sendto)
+        
+            if msg == '/exit':
+                peer_port =  sendto[-1]
+                allowed_ports.remove(peer_port)
+                sendto = (host, port)
+                print(f'Disconnect from client{peer_port}')
+
+            if msg.startswith('/connect'):
+                peer = msg.split(' ')[-1]
+                peer_port = int(peer.replace('client' , ''))
+                allowed_ports.append(peer_port)
+                sendto = (host, peer_port)
+                print(f'Connect to client{peer_port}')
+            if msg == '/help':
+                print(HELP_TEXT)
+        else:
+            s.sendto(msg.encode('ascii'), sendto)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    os.system('clear')
+    init()
+    text = """
+LWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWA
+LWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWA
+LWALSLWALSLWALSLWALSLWALSLWALS$$$$$$$LWALSLWALSLWALSLLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$LWALS$$LWALSLWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$$LWA$$$LWALSLWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$L$$$W$$ALSLWALSLWALSLWLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$LWALS$$LWALSLWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$LWALS$$LWALSLWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$LWALS$$LWALSLWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWAL$$LWALS$$$$$$$LWALSLWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWA$$$$$$$$LWALS$$LWAL$$SLWALSLWALWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSL$$$$$WAL$$LWALS$$LWALS$$$$$$$LWALWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$$L$$WAL$$LWALS$$LWALS$$LWAL$$LWLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LW$$ALS$$LWALS$$LWALS$$LWAL$$ALLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LW$$ALS$$LWALS$$LWALS$$LWAL$$SLLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LW$$ALS$$LWALS$$LWALS$$LWAL$$WALWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LW$$ALS$$LWALS$$LWALS$$LWAL$$SLLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LWAL$$$$S$$$$$$L$$$$$$WALS$$LWALWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALS$$LWALSLWALSLWALSLWALSLWALS$$LWALLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSS$$LWALSLWALSLWALSLWALSLWA$$LWALSLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSL$$$WALSLWALSLWALSLWALSLW$$LWALSLLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLW$$$$LWALSLWALSLWALSLW$$$WALSLWALWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWAL$$SLWALSLWALSLWALSL$LSLWALSLWLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWAL$$$SLWALSLWALSLWAL$$ALSLWALSLLWALSLWALSLWALSLWALS
+LWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWA
+LWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWALSLWA
+"""
+    text = text.replace('$', Fore.CYAN + '$' + Fore.RESET)
+    for char in ['L', 'W', 'A', 'S']:
+        text = text.replace(char, Fore.MAGENTA + char + Fore.RESET)
+    print(text)
+    print('\n')
+    connect()

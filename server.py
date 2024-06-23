@@ -1,67 +1,36 @@
-import asyncio
-import json
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives import serialization
-
-clients = []
+import socket
 
 
-async def handle_client(reader, writer):
-    client_address = writer.get_extra_info('peername')
-    print(f'New connection from {client_address}')
-    clients.append(writer)
 
-    try:
-        while True:
-            data = await reader.read(4096)
-            if not data:
-                break
-
-            decrypted_data = decrypt_message(data)
-            message = decrypted_data.decode()
-            print(f'Received message from {client_address}: {message}')
-
-            # Broadcast the message to all clients
-            for client_writer in clients:
-                if client_writer != writer:
-                    encrypted_message = encrypt_message(message)
-                    client_writer.write(encrypted_message)
-                    await client_writer.drain()
-
-    except Exception as e:
-        print(f'Exception occurred for {client_address}: {e}')
-
-    finally:
-        clients.remove(writer)
-        print(f'Connection from {client_address} closed')
-        writer.close()
-        await writer.wait_closed()
+UDP_MAX_SIZE = 65535
 
 
-def decrypt_message(encrypted_data):
-    # Replace with your decryption logic
-    # In a real application, you'd securely load your private key
-    # and decrypt the data.
-    return encrypted_data
+def listen(host: str = '127.0.0.1', port: int = 3000):
+    s = socket.socket(socket.AF_INET, socket.sock.SOCK_DGRAM)
 
+    s.bind((host, port))
+    print(f'Listening at {host}:{port}')
 
-def encrypt_message(message):
-    # Replace with your encryption logic
-    # In a real application, you'd securely load the recipient's
-    # public key and encrypt the message.
-    return message.encode()
+    members = []
+    while True:
+        msg, addr = s.recvfrom(UDP_MAX_SIZE)
 
+        if addr not in members:
+            members.append(addr)
 
-async def main():
-    server = await asyncio.start_server(
-        handle_client, '127.0.0.1', 8888)
+        if not msg:
+            continue
 
-    async with server:
-        await server.serve_forever()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
+        client_id = addr[1]
+        msg_text = msg.decode('ascii')
+        if msg_text == '__join':
+            print(f'Client {client_id} joined the chat')
+            continue
+        
+        message_template = '{}__{}'
+        if msg_text == '__members':
+            print(f'Client {client_id} requested members')
+            active_members = [f'client{m[1]}' for m in members if m != addr]
+            members_msg = ';'.join(active_members)
+            s.sendto(message_template.format('members', members_msg).encode('ascii'), addr)
+            continue
